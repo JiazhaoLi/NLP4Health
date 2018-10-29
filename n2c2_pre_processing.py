@@ -27,19 +27,21 @@ def ann_helper(term_filename):
     relation_pair = {}
     # get the term dict
     for line in term_examples:
-        line = line.strip().split('\t')
-        line[1] = line[1].split(' ')
+        line = line.strip().split('\t')  # line = [[T61],[Strength 8758 8762],[40mg]]
+        line[1] = line[1].split(' ')         #  line[1]= [[strength],[8758].[8762]]
         if line[0][0] == 'T':   # this is the term 
-            if len(line[1]) == 3:
+
+            if len(line[1]) == 3:           #line[1] = [[strength], [8758], [8762]]
                 pos_range = list(range(int(line[1][1]), int(line[1][2])))
                 for pos in pos_range:
-                    pos_type[str(pos)] = line[1][0]
-                term_dict[line[0]] = line[2]
-                term_pos[line[0]] = [int(line[1][1]), int(line[1][2])]
-            if len(line[1]) == 4:
+                    pos_type[str(pos)] = line[1][0]  # this is the entity label 
+                term_dict[line[0]] = line[2]         # this is the word 
+                term_pos[line[0]] = [int(line[1][1]), int(line[1][2])] # this is the temr range
+
+            if len(line[1]) == 4:           #line[1] = [[strength], [8758], [8762:222],[454]]
                 line[1][2] = line[1][2].split(';') 
                 pos_range = list(range(int(line[1][1]), int(line[1][2][0])))
-                for pos in pos_range:
+                for pos in pos_range:        
                     pos_type[str(pos)] = line[1][0] 
                 pos_range = list(range(int(line[1][2][1]), int(line[1][3])))
                 for pos in pos_range:
@@ -60,17 +62,14 @@ def ann_helper(term_filename):
                     pos_type[str(pos)] = line[1][0]
                 term_dict[line[0]] = line[2]
                 term_pos[line[0]] = [int(line[1][1]), int(line[1][4])]
-
-    
     # get the relation term
-    relation_index = 0 
+    # relation_index = 0 
     for line in term_examples:
         line = line.strip().split('\t')
         line[1] = line[1].split(' ')
-        if line[0][0] == 'R':   # this is the term
-            
-            relation_index += 1
-            relation_type = line[1][0]
+        if line[0][0] == 'R':   #   [[R1] [Strength-Drug Arg1:T5 Arg2:T6]]
+            # relation_index += 1
+            relation_type = line[1][0]  # line[1] = [Strength-Drug Arg1:T5 Arg2:T6]]
             term1_ann = line[1][1].split(':')[1]
             term1_pos = list(range(term_pos[term1_ann][0], term_pos[term1_ann][1]))
             for pos in term1_pos:
@@ -82,7 +81,6 @@ def ann_helper(term_filename):
                     index_rela[pos] = relation
 
             term2_ann = line[1][2].split(':')[1]
-            
             term2_pos = list(range(term_pos[term2_ann][0], term_pos[term2_ann][1]))
             for pos in term2_pos:
                 index_ann[pos] = term2_ann
@@ -95,6 +93,8 @@ def ann_helper(term_filename):
             relation_pair[line[0]] = [relation_type, term1_ann, term2_ann]
             # relation_pos[] = 'R'+str(relation_index)
     # print(relation_pair)
+    
+    
     return term_dict, pos_type, term_pos, index_ann, index_rela, relation_pair
 
 
@@ -116,27 +116,33 @@ def text_helper(term_filename, text_filename,relation_fre):
         else:
             offset_s = text[start:].index(token_list[index])
             offset_e = offset_s + len(token_list[index])
+        word_range = list(range(start+offset_s, start + offset_e))
         # get the NER tag
-        if str(start+offset_s) in pos_type:
-            NER_type = pos_type[str(start+offset_s)]
-        elif str(start+offset_e) in pos_type:
-            NER_type = pos_type[str(start+offset_e)]
-        else:
-            NER_type = 'O'
+        NER_type = []
+        for pos in word_range:
+            if str(pos) in pos_type:
+                NER_type.append(str(pos_type[str(pos)]))
+            else:
+                NER_type.append('O')
         
         # get the relationship 
-        if(start + offset_s) in index_ann:
-            ann_type = index_ann[(start + offset_s)]
-            relation = index_rela[(start + offset_s)]
-        else:
-            ann_type = 'None'
-            relation = 'None'
-        token_map_list.append([index, token_list[index], start + offset_s, start+ offset_e, pos_tag[index][1], NER_type, ann_type, str(relation)])
+        ann_type = []
+        relation = []
+        for pos in word_range:
+            if pos in index_ann:
+                ann_type.append(str(index_ann[pos]))
+                relation.append(str(index_rela[pos]))
+            else:
+                ann_type.append('None')
+                relation.append('None')
+        token_map_list.append([index, token_list[index], start + offset_s, start+ offset_e, pos_tag[index][1], \
+                                 ':'.join(x for x in list(set(NER_type))), ':'.join(x for x in list(set(ann_type))), \
+                                  ':'.join(x for x in list(set(relation)))])
         start = offset_s + start
+
     for term in token_map_list:
         start_off = term[2]
         end_off = term[3]
-        
     # generate the embedding of 
     output_name = ('./output/{}.tsv'.format(term_filename.split('/')[5].split('.')[0]))
     with open(output_name, 'w') as f:
@@ -145,6 +151,9 @@ def text_helper(term_filename, text_filename,relation_fre):
         for pair in token_map_list:
             f.write(str(index)+'\t'+pair[1]+'\t'+str(pair[2])+'\t'+str(pair[3])+'\t'+pair[4]+'\t'+pair[5]+'\t'+pair[6]+'\t'+pair[7]+'\n')
             index += 1
+
+
+    
     # get the range of each relationship 
     relation_list, train_exmaple_indexrange = generate_train_sample(token_map_list)
     
@@ -169,18 +178,24 @@ def text_helper(term_filename, text_filename,relation_fre):
         # print((token_map_list[start:end])) # this is one realtionship)
        
        
+
     #     relative_pos1 = []
     #     relative_pos2 = []
     #     index = 0
     #     len_sentence = (len(sentence))
-    #     # print(sentence)
-    #     # print(relation_label[2])
+        
     #     for sen in sentence:
     #         if sen[6] == str(relation_label[1]):
     #             relative_pos1.append(index)
     #         if sen[6] == str(relation_label[2]):
     #             relative_pos2.append(index)
     #         index += 1
+    #     if len(relative_pos1) <1:
+            
+    #         print(relation_label[1])
+    #         print(relation_label[2])
+    #         print(sentence)
+    #         print(term_filename)
     #     # print(relative_pos2)
     #     # get two relative position list
     #     relativepos_list1 = []
@@ -259,10 +274,8 @@ def load_data(train_datapath1,train_datapath2):
             term_filename = train_datapath1 + file
             text_filename = train_datapath1 + file.split('.')[0]+'.txt'
             token_map_list = text_helper(term_filename,text_filename,relation_fre)
-            # print(token_map_list)
-
             relation_list, train_exmaple = generate_train_sample(token_map_list)
-            # genretate the training sample 
+    # genretate the training sample 
     print(relation_fre)
            
     
