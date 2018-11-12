@@ -25,8 +25,13 @@ from keras.optimizers import Adam
 from keras.models import Model
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score
+from keras.models import load_model
+from keras import backend as K
 
-
+train_datapath = './data/n2c2_2018/dataset/track2-training_data_2/'
+test_datapath = './data/data/gold_standard_test/'
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -48,7 +53,9 @@ def train_ann_helper(term_filename):
     relation_pair = {}
     # get the Notation information
     for line in term_examples:
+        
         line = line.strip().split('\t')  # line = [[T61],[Strength 8758 8762],[40mg]]
+
         line[1] = line[1].split(' ')         #  line[1]= [[strength],[8758].[8762]]
         if line[0][0] == 'T':   # this is the term 
 
@@ -94,7 +101,7 @@ def train_ann_helper(term_filename):
                  # get the range of each notation
                 nota_range[line[0]] = [int(line[1][1]), int(line[1][4])]
 
-    # get the relation term
+    # get the relation term this is the ground truth 
     for line in term_examples:
         line = line.strip().split('\t')
         line[1] = line[1].split(' ')
@@ -134,77 +141,7 @@ def train_ann_helper(term_filename):
 
     return nota_word, pos_nota, nota_range, index_ann, index_rela, relation_pair
 
-
-def test_ann_helper(term_filename):
-    """
-        for each .ann file, for each line: 
-            1. T -> nota_word 
-            2. R -> relation_dict
-    """
-    # generate the Term dictionary()
-    term_examples = list(open(term_filename, 'r').readlines())
-    nota_word = {} # dict for T: word
-    pos_nota = {}  # dict pos: type
-    nota_range = {}  #  dict term and postion 
-    pos_T= {}
-    # get the Notation information
-    for line in term_examples:
-        line = line.strip().split('\t')  # line = [[T61],[Strength 8758 8762],[40mg]]
-        line[1] = line[1].split(' ')         #  line[1]= [[strength],[8758].[8762]]
-        if line[0][0] == 'T':   # this is the term 
-
-            if len(line[1]) == 3:           #line[1] = [[strength], [8758], [8762]]
-                # for each pos we name a entity name 
-                pos_range = list(range(int(line[1][1]), int(line[1][2])))
-                for pos in pos_range:
-                    pos_nota[str(pos)] = line[1][0]  # this is the entity label 
-                    pos_T[str(pos)] = line[0]
-                # this is the notation_word    delete?
-                nota_word[line[0]] = line[2]         # this is the word 
-                # get the range of each notation
-                nota_range[line[0]] = [int(line[1][1]), int(line[1][2])] # this is the temr range
-
-            if len(line[1]) == 4:           #line[1] = [[strength], [8758], [8762:222],[454]]
-                # for each pos we name a entity name 
-                line[1][2] = line[1][2].split(';') 
-                pos_range = list(range(int(line[1][1]), int(line[1][2][0])))
-                for pos in pos_range:   
-                    pos_T[str(pos)] = line[0]     
-                    pos_nota[str(pos)] = line[1][0] 
-                pos_range = list(range(int(line[1][2][1]), int(line[1][3])))
-                for pos in pos_range:
-                    pos_T[str(pos)] = line[0]
-                    pos_nota[str(pos)] = line[1][0]
-                # this is the notation_word    delete?
-                nota_word[line[0]] = line[2]
-                # get the range of each notation
-                nota_range[line[0]] = [int(line[1][1]), int(line[1][3])]
-
-            if len(line[1]) == 5:
-                # for each pos we name a entity name 
-                line[1][2] = line[1][2].split(';') 
-                line[1][3] = line[1][3].split(';') 
-                pos_range = list(range(int(line[1][1]), int(line[1][2][0])))
-                for pos in pos_range:
-                    pos_T[str(pos)] = line[0]
-                    pos_nota[str(pos)] = line[1][0] 
-                pos_range = list(range(int(line[1][2][1]), int(line[1][3][0])))
-                for pos in pos_range:
-                    pos_T[str(pos)] = line[0]
-                    pos_nota[str(pos)] = line[1][0]
-                pos_range = list(range(int(line[1][3][1]), int(line[1][4])))
-                for pos in pos_range:
-                    pos_T[str(pos)] = line[0]
-                    pos_nota[str(pos)] = line[1][0]
-                # this is the notation_word    delete?
-                nota_word[line[0]] = line[2]
-                 # get the range of each notation
-                nota_range[line[0]] = [int(line[1][1]), int(line[1][4])]
-    # print(pos_T)
-    return nota_word, pos_nota, nota_range,pos_T
-
-
-def train_text_helper(term_filename, text_filename):
+def train_text_helper(term_filename, text_filename,output_folder):
     nota_word, pos_nota, nota_range, index_ann, index_rela, relation_pair = train_ann_helper(term_filename)
     # find the postion in the text
     text_examples = list(open(text_filename, 'r').readlines())
@@ -263,7 +200,9 @@ def train_text_helper(term_filename, text_filename):
         start_off = term[2]
         end_off = term[3]
     # generate the embedding of 
-    output_name = ('./train_output/{}.tsv'.format(term_filename.split('/')[5].split('.')[0]))
+
+    output_name = ('./{}/{}.tsv'.format(output_folder,term_filename.split('/')[5].split('.')[0]))
+    # print(output_name)
     if os.path.exists(output_name):
         pass
     else:
@@ -271,80 +210,14 @@ def train_text_helper(term_filename, text_filename):
             f.write('inedex\tword\tstart\tend\tPOS\tNER\tNotation\tRelation'+'\n')
             index = 0
             for pair in token_map_list:
-                f.write(str(index)+'\t'+pair[1]+'\t'+str(pair[2])+'\t'+str(pair[3])+'\t'+pair[4]+'\t'+pair[5]+'\t'+pair[6]+'\t'+pair[7]+'\n')
+                f.write(str(index)+'\t'+pair[1]+'\t'+str(pair[2])+'\t'+str(pair[5])+'\t'+pair[4]+'\t'+pair[5]+'\t'+pair[6]+'\t'+pair[7]+'\n')
                 index += 1
     
     return token_map_list,relation_pair
 
-
-def test_text_helper(term_filename, text_filename):
-    nota_word, pos_nota, nota_range,pos_T = test_ann_helper(term_filename)
-    # find the postion in the text
-    text_examples = list(open(text_filename, 'r').readlines())
-    text = ''
-    for line in text_examples:
-        text = text + line
-    token_map_list = []
-    token_list = nltk.word_tokenize(text)
-    pos_tag = nltk.pos_tag(token_list)
-    start = 0 
-    for index in range(len(token_list)):
-        if str(token_list[index]) == '\'\'' or str(token_list[index]) == '``':
-            offset_s = 0
-            offset_e = len(token_list[index])
-        else:
-            offset_s = text[start:].index(token_list[index])
-            offset_e = offset_s + len(token_list[index])
-        word_range = list(range(start+offset_s, start + offset_e))
-
-        # get the NER tag
-        NER_type = []
-        for pos in word_range:
-            if str(pos) in pos_nota:
-                NER_type.append(str(pos_nota[str(pos)]))
-            else:
-                NER_type.append('O')
-
-        ann_type = []
-        for pos in word_range:
-            if str(pos) in pos_T:
-                ann_type.append(str(pos_T[str(pos)]))
-            else:
-                ann_type.append('None')
-        
-        # filter 
-        if len(list(set(NER_type))) > 1 and 'O' in NER_type:
-            NER_type.remove('O')
-        NER_list = ':'.join(x for x in list(set(NER_type)))
-
-        if len(list(set(ann_type))) > 1 and 'None' in ann_type:
-            ann_type.remove('None')
-        ann_type_list = ':'.join(x for x in list(set(ann_type)))
-
-        token_map_list.append([index, token_list[index], start + offset_s, start+ offset_e, pos_tag[index][1], \
-                                 NER_list,ann_type_list])          
-        start = offset_s + start
-
-    for term in token_map_list:
-        start_off = term[2]
-        end_off = term[3]
-    # generate the embedding of 
-    output_name = ('./test_output/{}.tsv'.format(term_filename.split('/')[5].split('.')[0]))
-    if os.path.exists(output_name):
-        pass
-    else:
-        with open(output_name, 'w') as f:
-            f.write('inedex\tword\tstart\tend\tPOS\tNER\tT'+'\n')
-            index = 0
-            for pair in token_map_list:
-                f.write(str(index)+'\t'+pair[1]+'\t'+str(pair[2])+'\t'+str(pair[3])+'\t'+pair[4]+'\t'+pair[5]+'\t'+pair[6]+'\t'+'\n')
-                index += 1
-    
-    return token_map_list
-    
-
 def generate_train_possiblepair_sample(token_map_list,relation_pair):
-    global max_length_all
+    max_length_all = 50
+    # global max_length_all
     relation_range = {}
     Stren_Drug_trainset = []
     sentence_index = 0
@@ -413,56 +286,58 @@ def generate_train_possiblepair_sample(token_map_list,relation_pair):
     #relation_pair
     #[relation_label, term1_ann, term2_ann]
     # all grounde truth 
-    for k, pair in relation_pair.items():
-        ground_truth_dict[':'.join(pair[1:])] = pair[0]
-        #   ['T1:T2'] = Reason-Drug
+    if len(relation_pair) >0:
+        for k, pair in relation_pair.items():
+            ground_truth_dict[':'.join(pair[1:])] = pair[0]
+            #   ['T1:T2'] = Reason-Drug
 
-    train_feature_sample = []
-    train_label_sample = []
-    for drug, possible in drug_pair.items():
-        for piss in possible:    # loop all possible      # if in relation                
-            if ':'.join([piss,drug]) in ground_truth_dict:      # if is lable
-                if [piss,drug] not in train_feature_sample:
-                    train_feature_sample.append([piss,drug])
-                    train_label_sample.append(ground_truth_dict[':'.join([piss,drug])])
-            else:                 # if not lable but a relation
-                if [piss,drug] not in train_feature_sample:
-                    train_feature_sample.append([piss,drug])
-                    train_label_sample.append('None')
-    
-    '''
-        get range of each sample
-    '''
-    train_context_range = []
-    for sample in train_feature_sample:
-        # loop for each instance
-        if ':' not in entities_pos[sample[0]]:
-            min_e_index = int(entities_pos[sample[0]])
-            max_e_index = int(entities_pos[sample[0]])
-        else:
-            entities_pos_l = entities_pos[sample[0]].split(':')
-            min_e_index = min([int(x) for x in entities_pos_l])
-            max_e_index = max([int(x) for x in entities_pos_l])
-            
-        if ':' not in drug_pos[sample[1]]:
-            min_d_index = int(drug_pos[sample[1]])
-            max_d_index = int(drug_pos[sample[1]])
-        else:
-            drug_pos_l = drug_pos[sample[1]].split(':')
-            min_d_index = min([int(x) for x in drug_pos_l])
-            max_d_index = max([int(x) for x in drug_pos_l]) 
+        train_feature_sample = []
+        train_label_sample = []
+        for drug, possible in drug_pair.items():
+            for piss in possible:    # loop all possible      # if in relation                
+                if ':'.join([piss,drug]) in ground_truth_dict:      # if is lable
+                    if [piss,drug] not in train_feature_sample:
+                        train_feature_sample.append([piss,drug])
+                        train_label_sample.append(ground_truth_dict[':'.join([piss,drug])])
+                else:                 # if not lable but a relation
+                    if [piss,drug] not in train_feature_sample:
+                        train_feature_sample.append([piss,drug])
+                        train_label_sample.append('None')
         
-        min_index = min(min_e_index,min_d_index)
-        max_index = max(max_e_index,max_d_index)
+        '''
+            get range of each sample
+        '''
+        train_context_range = []
+        for sample in train_feature_sample:
+            # loop for each instance
+            if ':' not in entities_pos[sample[0]]:
+                min_e_index = int(entities_pos[sample[0]])
+                max_e_index = int(entities_pos[sample[0]])
+            else:
+                entities_pos_l = entities_pos[sample[0]].split(':')
+                min_e_index = min([int(x) for x in entities_pos_l])
+                max_e_index = max([int(x) for x in entities_pos_l])
+                
+            if ':' not in drug_pos[sample[1]]:
+                min_d_index = int(drug_pos[sample[1]])
+                max_d_index = int(drug_pos[sample[1]])
+            else:
+                drug_pos_l = drug_pos[sample[1]].split(':')
+                min_d_index = min([int(x) for x in drug_pos_l])
+                max_d_index = max([int(x) for x in drug_pos_l]) 
+            
+            min_index = min(min_e_index,min_d_index)
+            max_index = max(max_e_index,max_d_index)
 
-        context_length =  1.0 /2 * (max_length_all - (max_index - min_index))
-        possible_range = [int(np.floor(min_index - context_length)), int(np.ceil(max_index + context_length))]
-        train_context_range.append([[sample[0],sample[1]],possible_range])
-        final_train_feature = add_relative_features(train_context_range,token_map_list)
-
+            context_length =  1.0 /2 * (max_length_all - (max_index - min_index))
+            possible_range = [int(np.floor(min_index - context_length)), int(np.ceil(max_index + context_length))]
+            train_context_range.append([[sample[0],sample[1]],possible_range])
+            final_train_feature = add_relative_features(train_context_range,token_map_list)
+        
     return final_train_feature,train_label_sample
 
 
+   
 
 def add_relative_features(train_context_range,token_map_list):
     train_all_sentence = []
@@ -511,6 +386,7 @@ def add_relative_features(train_context_range,token_map_list):
 
 def embedding_NER_POS(Streng_Drug_allsample_feature):
     # 
+
     possible_entity = ['Strength', 'Frequency', 'Reason', 'Route', 'Dosage', 'Form', 'ADE', 'Duration']
 
     NER_dict = {}
@@ -558,7 +434,6 @@ def embedding_NER_POS(Streng_Drug_allsample_feature):
 
     with open('train_pair/NER_POS_embed.pickle', 'wb') as f:
         pickle.dump([NER_dict, POS_dict], f, pickle.HIGHEST_PROTOCOL)
-
     
 def embedding_features(Streng_Drug_allsample_feature,label):
     # 
@@ -603,7 +478,6 @@ def embedding_features(Streng_Drug_allsample_feature,label):
     return train_instance_patched
 
 
-
 def split_labels(Streng_Drug_allsample_feature, Streng_Drug_allsample_label,label):
     label_instance_dict = {}
     for index in tqdm(range(len(Streng_Drug_allsample_label))):
@@ -617,24 +491,49 @@ def split_labels(Streng_Drug_allsample_feature, Streng_Drug_allsample_label,labe
             label_instance_dict[Streng_Drug_allsample_label[index]] = label_instance
     return label_instance_dict
 
+
+"""
+    preprocessing train test and goldenlabel
+"""
+
 def load_train_data(train_datapath):
     global max_length_all
     Streng_Drug_allsample_feature = []
     Streng_Drug_allsample_label = []
+    ground_truth = []
     file_list = [f for f in listdir(train_datapath) if isfile(join(train_datapath, f))]
     for index in tqdm(range(len(file_list))):
         file = file_list[int(index)]
         if file.endswith('.ann'):  
             term_filename = train_datapath + file
             text_filename = train_datapath + file.split('.')[0]+'.txt'
-            token_map_list,relation_pair = train_text_helper(term_filename,text_filename)
+            token_map_list,relation_pair = train_text_helper(term_filename,text_filename,'train_output')
             file_train_feature,file_train_label_sample = generate_train_possiblepair_sample(token_map_list,relation_pair)
+            ground_truth.extend(relation_pair)
             Streng_Drug_allsample_feature.extend(file_train_feature)
             Streng_Drug_allsample_label.extend(file_train_label_sample)
     with open('./train_pair/train_pair.pickle','wb') as f:
         pickle.dump([Streng_Drug_allsample_feature, Streng_Drug_allsample_label], f, pickle.HIGHEST_PROTOCOL)
 
-
+def load_test_data(test_datapath):
+    global max_length_all
+    Streng_Drug_allsample_feature = []
+    Streng_Drug_allsample_label = []
+    ground_truth = []
+    file_list = [f for f in listdir(test_datapath) if isfile(join(test_datapath, f))]
+    for index in tqdm(range(len(file_list))):
+        file = file_list[int(index)]
+        if file.endswith('.ann'): 
+            term_filename = test_datapath + file
+            print(term_filename)
+            text_filename = test_datapath + file.split('.')[0]+'.txt'
+            token_map_list,relation_pair = train_text_helper(term_filename,text_filename,'test_output')
+            file_train_feature,file_train_label_sample = generate_train_possiblepair_sample(token_map_list,relation_pair)
+            ground_truth.extend(relation_pair)
+            Streng_Drug_allsample_feature.extend(file_train_feature)
+            Streng_Drug_allsample_label.extend(file_train_label_sample)
+    with open('./train_pair/test_pair.pickle','wb') as f:
+        pickle.dump([Streng_Drug_allsample_feature, Streng_Drug_allsample_label], f, pickle.HIGHEST_PROTOCOL)
 
 def train_word2vec():
     separate_data()
@@ -648,65 +547,180 @@ def train_word2vec():
     print('Start Word2Vec training...')
     model = Word2Vec(sentense_list, size=100, window=5, min_count=1, workers=4)
     model.save('word2vec_50000notes_1008') 
-    #           
+    #            
 
 
-def train_model(train_instance_patched,Streng_Drug_allsample_label):
-    
-    
+def mcor(y_true, y_pred):
+     #matthews_correlation
+     y_pred_pos = K.round(K.clip(y_pred, 0, 1))
+     y_pred_neg = 1 - y_pred_pos
+ 
+ 
+     y_pos = K.round(K.clip(y_true, 0, 1))
+     y_neg = 1 - y_pos
+ 
+ 
+     tp = K.sum(y_pos * y_pred_pos)
+     tn = K.sum(y_neg * y_pred_neg)
+ 
+ 
+     fp = K.sum(y_neg * y_pred_pos)
+     fn = K.sum(y_pos * y_pred_neg)
+ 
+ 
+     numerator = (tp * tn - fp * fn)
+     denominator = K.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+ 
+ 
+     return numerator / (denominator + K.epsilon())
+
+def precision(y_true, y_pred):
+    """Precision metric.
+
+    Only computes a batch-wise average of precision.
+
+    Computes the precision, a metric for multi-label classification of
+    how many selected items are relevant.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+def recall(y_true, y_pred):
+    """Recall metric.
+
+    Only computes a batch-wise average of recall.
+
+    Computes the recall, a metric for multi-label classification of
+    how many relevant items are selected.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
+
+
+def f1(y_true, y_pred):
+    def recall(y_true, y_pred):
+        """Recall metric.
+
+        Only computes a batch-wise average of recall.
+
+        Computes the recall, a metric for multi-label classification of
+        how many relevant items are selected.
+        """
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+        recall = true_positives / (possible_positives + K.epsilon())
+        return recall
+
+    def precision(y_true, y_pred):
+        """Precision metric.
+
+        Only computes a batch-wise average of precision.
+
+        Computes the precision, a metric for multi-label classification of
+        how many selected items are relevant.
+        """
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+        precision = true_positives / (predicted_positives + K.epsilon())
+        return precision
+    precision = precision(y_true, y_pred)
+    recall = recall(y_true, y_pred)
+    return 2*((precision*recall)/(precision+recall+K.epsilon()))
+
+def train_model(train_instance_patched, train_label, test_instance_patched, test_label,label):
     embedding_dim = 156 # 156
     sequence_length = 50 # 
     filter_sizes = [1,2,3,4,5]
     num_filters = 200
-    batch_size = 30
+    batch_size = 16
     drop = 0.5
-    epochs = 5
-    num_instance = len(train_instance_patched)
-    split_rate = 0.3
-    train_num = int(num_instance*0.7)
+    epochs = 30
+    train_num_instance = len(train_instance_patched)
+    test_num_instance = len(test_instance_patched)
+    # split_rate = 0.3
+    # train_num = int(num_instance*0.7)
     input_length = sequence_length * embedding_dim
     
-    
     # print(np.shape(train_instance_patched[0]))
-
-    a = np.zeros((num_instance, sequence_length, embedding_dim))
-    for i in range(num_instance):
+    # get the embedding data in 3 dimesioon
+    a = np.zeros((train_num_instance, sequence_length, embedding_dim))
+    for i in range(train_num_instance):
         x = min(50,np.shape(train_instance_patched[i])[0])
         a[i,:x,:] = np.array(train_instance_patched[i])[:x,:]
-
-    b = np.zeros((num_instance,sequence_length * embedding_dim))
+    # transfer the data into 2d dimestion
+    X_train = np.zeros((train_num_instance,sequence_length * embedding_dim))
     for i in range(np.shape(a)[0]):
-        b[i,:] = a[i,:,:].reshape(1,sequence_length*embedding_dim)
-    
+        X_train[i,:] = a[i,:,:].reshape(1,sequence_length*embedding_dim)
 
-    c = list(zip(a, b))
-    random.shuffle(c)
-    a, b = zip(*c)
-    # print(np.shape(b))
-    a = np.array(a)
-    b = np.array(b)
-    X_train = b[:train_num, :]
-    X_test = b[train_num:, :]
-    print(np.shape(X_train))
-    print(np.shape(X_test))
+    # test
+    a = np.zeros((test_num_instance, sequence_length, embedding_dim))
+    for i in range(test_num_instance):
+        x = min(50,np.shape(test_instance_patched[i])[0])
+        a[i,:x,:] = np.array(test_instance_patched[i])[:x,:]
+    X_test = np.zeros((test_num_instance,sequence_length * embedding_dim))
+    for i in range(np.shape(a)[0]):
+        X_test[i,:] = a[i,:,:].reshape(1,sequence_length*embedding_dim)
 
-    c = np.zeros((len(Streng_Drug_allsample_label),2))
-    for i in range(len(Streng_Drug_allsample_label)):
-        if Streng_Drug_allsample_label[i] == 0:
-            c[i,:] = [0,1]
+
+    # c = np.zeros((len(Streng_Drug_allsample_label),2))
+    # for i in range(len(Streng_Drug_allsample_label)):
+    #     if Streng_Drug_allsample_label[i] == 0:
+    #         c[i,:] = [0,1]
+    #     else:
+    #         c[i,:] = [1,0]
+
+    y_train = np.array(train_label)
+    y_test = np.array(test_label)
+    # X_train, X_test, y_train, y_test = train_test_split(b,Streng_Drug_allsample_label, test_size=0.33, random_state=42)
+    print("size of training data: "+ str(np.shape(X_train)))
+    print("size of training label: " +str(np.shape(y_train)))
+    print("size of testing data: "+ str(np.shape(X_test)))
+    print("size of testing lable:" + str(np.shape(y_test)))
+    positive_num = 0
+    for i in range(len(y_train)):
+        if y_train[i] == 1:
+            positive_num+=1 
+    print('positive in train: ' +str(positive_num))
+    positive_num = 0
+    for i in range(len(y_test)):
+        if y_test[i] == 1:
+            positive_num+=1 
+    print('positive in test: ' +str(positive_num))
+
+    # c = list(zip(X_train, y_train))
+    # random.shuffle(c)
+    # X_train, y_train = zip(*c)
+
+    y_train_2 = np.zeros((len(y_train),2))
+    for i in range(len(y_train)):
+        if y_train[i] == 0:
+            y_train_2[i,:] = [0,1]
         else:
-            c[i,:] = [1,0]
-    Y_train = c[:train_num,:]
-    Y_test = c[train_num:,:]
-    print(np.shape(Y_train))
-    print(np.shape(Y_test))
+            y_train_2[i,:] = [1,0]
 
-   
+    
+    # c = list(zip(X_test, y_test))
+    # random.shuffle(c)
+    # X_test, y_test = zip(*c)
+
+    y_test_2 = np.zeros((len(y_test),2))
+
+    for i in range(len(y_test)):
+        if y_test[i] == 0:
+            y_test_2[i,:] = [0,1]
+        else:
+            y_test_2[i,:] = [1,0]
+
+
+    # start training 
     print("Creating Model...")
     inputs = Input(shape=(input_length,), dtype='float32') #  ? *80
-    # print(inputs)
     reshape = Reshape((sequence_length,embedding_dim,1))(inputs)
-    # print(reshape)
+
     conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], embedding_dim), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
     conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], embedding_dim), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
     conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], embedding_dim), padding='valid', kernel_initializer='normal', activation='relu')(reshape)
@@ -718,22 +732,53 @@ def train_model(train_instance_patched,Streng_Drug_allsample_label):
     maxpool_2 = MaxPool2D(pool_size=(sequence_length - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
     maxpool_3 = MaxPool2D(pool_size=(sequence_length - filter_sizes[3] + 1, 1), strides=(1,1), padding='valid')(conv_3)
     maxpool_4 = MaxPool2D(pool_size=(sequence_length - filter_sizes[4] + 1, 1), strides=(1,1), padding='valid')(conv_4)
-    # # print(np.shape(X_train))
-    # exit()
-    # sequence_length = np.shape(X_train)[1]
-    # print(sequence_length)
+
+
+
     concatenated_tensor = Concatenate(axis=1)([maxpool_0, maxpool_1, maxpool_2, maxpool_3, maxpool_4])
     flatten = Flatten()(concatenated_tensor)
     dropout = Dropout(drop)(flatten)
     output = Dense(units=2, activation='softmax')(dropout)
     # this creates a model that includes
+
     model = Model(inputs=inputs, outputs=output)
 
     checkpoint = ModelCheckpoint('weights.{epoch:03d}-{val_acc:.4f}.hdf5', monitor='val_acc', verbose=1, save_best_only=True, mode='auto')
     adam = Adam(lr=1e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
 
-    model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['accuracy'])
+    # model.compile(optimizer=adam, loss='binary_crossentropy',metrics=[mcor,recall, f1])
+    model.compile(optimizer=adam, loss='binary_crossentropy',metrics=['accuracy'])
     print("Traning Model...")
-    model.fit(X_train, Y_train, batch_size=batch_size, epochs=epochs, verbose=1, callbacks=[checkpoint], validation_data=(X_test, Y_test))  # starts training
+    model.fit(X_train, y_train_2, batch_size=batch_size, epochs=epochs, verbose=1, callbacks=[checkpoint],shuffle=True,validation_data=(X_test, y_test_2),class_weight='auto')  # starts training
+    # keras.callbacks.ModelCheckpoint('./checkpoint', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)
+    # model.save('./modelsave/{}latest.h5'.format(label))
     
     
+
+
+
+#you can use it like this
+
+# test_predict = model.predict(X_test)
+# print(test_predict)
+# with open('output.csv','w') as f:
+#     for i in range(np.shape(test_predict)[0]):
+#         f.write(str(test_predict[i,:]))
+#         f.write('\n')
+
+# def predict():
+#     import h5py
+
+    #     with h5py.File('input/file.hdf5', 'r') as f:
+    #         x_data = f['x_data']
+    #         model.predict(x_data)
+            
+
+    # print(positive_num)
+    # print(np.shape(test_predict))
+    # print('F1-score:' +str(f1_score(y_test, test_predict, average='weighted')))
+    
+    
+
+    
+
